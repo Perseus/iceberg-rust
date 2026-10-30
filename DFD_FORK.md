@@ -95,3 +95,55 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
 - **Used by:** only the fork's tests.
 - **Remove when:** #3351 is rebased onto a base containing #3145 (then the
   upstream test already handles the `Result`), or with entry 1.
+
+### 3. Optional column statistics on `FileScanTask` (apache/iceberg-rust#3424)
+
+- **Fork commit:** `9832f9c7` (manual backport; upstream author Anurag
+  Mantripragada kept as git author, fork maintainer is committer).
+- **Upstream:** PR [apache/iceberg-rust#3424](https://github.com/apache/iceberg-rust/pull/3424),
+  issue [apache/iceberg-rust#3422](https://github.com/apache/iceberg-rust/issues/3422).
+- **Upstream SHA used:** PR head `86e35d3d6365fa3dc1a17be26096f45b2b3e6985`,
+  net diff against merge base `beba39c8` (all 10 PR commits squashed).
+- **Upstream status:** open, not merged (as of 2026-10-24).
+- **Backport notes:** `context.rs`, `task.rs`, `test_utils/scan.rs` and
+  `public-api.txt` applied cleanly with `git apply --3way`; `scan/mod.rs` had 7
+  conflict hunks, all from upstream changes made after `5b82ab99`. Resolutions:
+  1. `collect_scan_field_ids`: use the PR's new `require_field_id` helper, as
+     upstream does. At this base `resolve_field_id` returns `Option<i32>`, not
+     `Result<Option<i32>>` (that came with
+     [#3070](https://github.com/apache/iceberg-rust/pull/3070), "reject ambiguous
+     case-insensitive fields"), so `require_field_id` drops the `?`. Effect:
+     `with_column_stats` resolves names exactly like `select` does on this base;
+     an ambiguous case-insensitive name picks a field instead of failing, the same
+     as `select` here.
+  2. and 3. `TableScanBuilder` struct and `new`: add `column_stats_names` next to
+     this base's `snapshot_id` (upstream has `snapshot_selection` from
+     [#3260](https://github.com/apache/iceberg-rust/pull/3260), time travel).
+  4. Builder methods: add the PR's `with_column_stats` unchanged; keep this
+     base's `snapshot_id` method and docs (upstream's docs mention `as_of_time`,
+     which does not exist here).
+  5. Test imports: import only `resolve_column_stats_columns` (this base's tests
+     do not import `resolve_field_id`).
+  6. Test `spec` imports: this base's list plus the PR's additions, `ListType`
+     and `StructType`.
+  7. Tests: add the PR's `nested_schema`, `column_names` and the two
+     `resolve_column_stats_columns` tests. Not carried: the two
+     `case_insensitive ... ambiguous` tests, which are #3070's, appear only as
+     conflict context.
+
+  Non-conflict adaptations, needed for the code to compile on this base:
+  - `task.rs` `bound_as_column_type` calls `Datum::promote_to`, added by
+    [#3483](https://github.com/apache/iceberg-rust/pull/3483). It is inlined as the
+    same widening (`int` -> `long`, `float` -> `double`); no `spec` changes.
+  - Tests build fields with `Type::Primitive(..)`: before
+    [#3527](https://github.com/apache/iceberg-rust/pull/3527) the `NestedField`
+    constructors take `Type`, not `impl Into<Type>`.
+  - `test_utils/scan.rs` imports `SchemaRef`, which upstream already imported.
+- **Why DFD needs it:** DFD will skip whole data files by comparing each file's
+  column min/max with the live dynamic filters, which needs per-file column
+  statistics on `FileScanTask`.
+- **Used by:** the root `Cargo.toml` `[patch]` on
+  [`iceberg-dyn-filter/f2-fork-column-stats`](https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter/f2-fork-column-stats).
+  No DFD code calls `with_column_stats` yet; later changes on top of that
+  branch will.
+- **Remove when:** the pinned iceberg-rust rev contains #3424's merge commit.
