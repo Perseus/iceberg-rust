@@ -26,7 +26,8 @@ such as `FileScanTask` are shared between DFD and `datafusion-iceberg`.
 
 - History is never rewritten. Downstream `Cargo.lock`s pin specific commits of
   this branch, so every earlier pin must stay resolvable. Changes are only added
-  as new commits on top, pushed as fast-forwards.
+  as new commits on top, pushed as fast-forwards. There is one exception,
+  described under "History" below.
 - One commit per upstream PR, built from the PR's net diff against its base,
   with the PR head SHA recorded. Adaptations needed only because this base is
   older are kept in that commit and described below, or in a separate, clearly
@@ -56,7 +57,7 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
 
 ### 1. Execution-time predicates in `ArrowReader` (apache/iceberg-rust#3351)
 
-- **Fork commit:** `3f9c68b7` (`git cherry-pick -x`; author unikdahal, kept).
+- **Fork commit:** `6ed9531b` (`git cherry-pick -x`; author unikdahal, kept).
 - **Upstream:** PR [apache/iceberg-rust#3351](https://github.com/apache/iceberg-rust/pull/3351),
   issue [apache/iceberg-rust#3350](https://github.com/apache/iceberg-rust/issues/3350).
 - **Upstream SHA used:** PR head `821fc65e3417fcba1fbe772cf476bf3a10516fea`
@@ -77,7 +78,7 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
 
 ### 2. Test-only `.unwrap()` for `FileScanTaskDeleteFile::builder().build()`
 
-- **Fork commit:** `1935cc80` (authored by the fork maintainer; adaptation only,
+- **Fork commit:** `cbfab28d` (authored by the fork maintainer; adaptation only,
   no upstream code).
 - **Upstream cause:** [apache/iceberg-rust#3145](https://github.com/apache/iceberg-rust/pull/3145),
   merged as [`b0d8baaf`](https://github.com/apache/iceberg-rust/commit/b0d8baaf966813f82363279db46d6688bf455d24)
@@ -98,7 +99,7 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
 
 ### 3. Optional column statistics on `FileScanTask` (apache/iceberg-rust#3424)
 
-- **Fork commit:** `9832f9c7` (manual backport; upstream author Anurag
+- **Fork commit:** `cfd8069b` (manual backport; upstream author Anurag
   Mantripragada kept as git author, fork maintainer is committer).
 - **Upstream:** PR [apache/iceberg-rust#3424](https://github.com/apache/iceberg-rust/pull/3424),
   issue [apache/iceberg-rust#3422](https://github.com/apache/iceberg-rust/issues/3422).
@@ -154,10 +155,31 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
 
 ## Commit trailer notes
 
-- `b822c052`, `9832f9c7` and `d7f56eb4` carry
+- `acf73714`, `cfd8069b` and `dacdc376` carry
   `Needed-by: https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter/f2-fork-column-stats`
   (a branch link), because the DFD PR did not exist when they were committed.
   The PR is [Perseus/datafusion-distributed#7](https://github.com/Perseus/datafusion-distributed/pull/7).
-  They were not amended, to avoid rewriting pushed history.
+  Their messages were not changed (not even by the identity rewrite in
+  "History"), so the trailers still read as committed.
 - The follow-up commit that corrects the `with_column_stats` doc and this
   ledger links #7 directly.
+
+## History
+
+- On 2026-10-30 this branch was rewritten once, only to replace the author and
+  committer identity of the fork maintainer's commits with
+  `Perseus <6716458+Perseus@users.noreply.github.com>`. Upstream authors were
+  kept. Every commit's tree and message are unchanged. This is the one exception
+  to the no-rewrite rule above; the DFD branches were repinned to the new SHAs
+  at the same time.
+- Commit messages still mention the old SHAs where they did before (for
+  example in `Needed-by` trailers); use this table to map them.
+
+| Old SHA | New SHA | Commit |
+|---|---|---|
+| `3f9c68b786978da8a989f328adc76d7cb870c435` | `6ed9531b7162eaf9797c8a67bb65215b368e5482` | feat(reader): support execution-time predicates in ArrowReader |
+| `1935cc80e95ab0210183db20f601ad2129f8d7f5` | `cbfab28d97d8621cd6e427152d75fe93e49f572d` | test(reader): unwrap FileScanTaskDeleteFile builder result at this base rev |
+| `b822c0521ddaf0f3777e86b75e76328bffda5816` | `acf737147a4d9d1b2ef4c42585c1765d4c4050ef` | docs: add DFD_FORK.md change ledger for this fork branch |
+| `9832f9c7af9738ae550f33211a4145a2438b1bb6` | `cfd8069b163913c51506abbd44e6a7ac0d8f521d` | feat(scan): optionally retain column statistics on FileScanTask |
+| `d7f56eb4b8b04d5612ca42d53a31946ffcced7b5` | `dacdc37692ac91edacafdb445bd49020be24fc1b` | docs: record apache/iceberg-rust#3424 backport in DFD_FORK.md |
+| `12d45da7b834b0e3e6fa6e71f0f32d5db0f0c615` | `bd8a39b5982de241fe62d392d586f7d54ea3e2d3` | docs(scan): match with_column_stats docs to this base; link DFD PR in ledger |
