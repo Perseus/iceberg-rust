@@ -531,6 +531,7 @@ async fn runtime_predicate_preserves_position_and_equality_deletes() {
             .with_partition_spec_id(0)
             .with_equality_ids(equality_ids)
             .build()
+            .unwrap()
     };
     let position = delete(position_path, DataContentType::PositionDeletes, None);
     let equality = delete(
