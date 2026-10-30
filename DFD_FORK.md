@@ -139,11 +139,25 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
     [#3527](https://github.com/apache/iceberg-rust/pull/3527) the `NestedField`
     constructors take `Type`, not `impl Into<Type>`.
   - `test_utils/scan.rs` imports `SchemaRef`, which upstream already imported.
+  - Docs: upstream's `with_column_stats` doc says `build` fails on an ambiguous
+    case-insensitive name. That check is #3070's and is not carried, so the doc
+    instead says names resolve as `select` does and an ambiguous name picks a
+    field (fixed in a follow-up commit, see "Commit trailer notes").
 - **Why DFD needs it:** DFD will skip whole data files by comparing each file's
   column min/max with the live dynamic filters, which needs per-file column
   statistics on `FileScanTask`.
-- **Used by:** the root `Cargo.toml` `[patch]` on
-  [`iceberg-dyn-filter/f2-fork-column-stats`](https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter/f2-fork-column-stats).
+- **Used by:** the root `Cargo.toml` `[patch]` in
+  [Perseus/datafusion-distributed#7](https://github.com/Perseus/datafusion-distributed/pull/7).
   No DFD code calls `with_column_stats` yet; later changes on top of that
   branch will.
 - **Remove when:** the pinned iceberg-rust rev contains #3424's merge commit.
+
+## Commit trailer notes
+
+- `b822c052`, `9832f9c7` and `d7f56eb4` carry
+  `Needed-by: https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter/f2-fork-column-stats`
+  (a branch link), because the DFD PR did not exist when they were committed.
+  The PR is [Perseus/datafusion-distributed#7](https://github.com/Perseus/datafusion-distributed/pull/7).
+  They were not amended, to avoid rewriting pushed history.
+- The follow-up commit that corrects the `with_column_stats` doc and this
+  ledger links #7 directly.

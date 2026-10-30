@@ -253,8 +253,9 @@ impl<'a> TableScanBuilder<'a> {
     /// primitive fields, such as `s.f` for a field of struct `s`. By default, tasks carry no
     /// statistics.
     ///
-    /// [`build`](Self::build) fails if a name matches no field, matches more than one field when
-    /// the scan is case-insensitive, or names a struct, list, map or metadata column.
+    /// [`build`](Self::build) fails if a name matches no field, or names a struct, list, map or
+    /// metadata column. Names resolve as [`select`](Self::select) does: when the scan is
+    /// case-insensitive and a name matches more than one field, one of them is picked.
     ///
     /// ```
     /// # use futures::TryStreamExt;
