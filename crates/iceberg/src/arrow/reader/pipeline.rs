@@ -82,6 +82,7 @@ impl ArrowReader {
             runtime_predicates: self
                 .runtime_predicate_provider
                 .map(|provider| Arc::new(RuntimePredicates::new(provider))),
+            runtime_predicate_row_filter: self.runtime_predicate_row_filter,
             scan_metrics: scan_metrics.clone(),
         };
 
@@ -138,6 +139,8 @@ struct FileScanTaskReader {
     parquet_read_options: ParquetReadOptions,
     /// Shared across tasks so each publication is bound once.
     runtime_predicates: Option<Arc<RuntimePredicates>>,
+    /// Whether runtime predicates join the Arrow row filter, or only prune.
+    runtime_predicate_row_filter: bool,
     scan_metrics: ScanMetrics,
 }
 
@@ -588,12 +591,25 @@ impl FileScanTaskReader {
                     record_batch_stream_builder.parquet_schema(),
                 )
             };
-            if plans.is_empty() {
+            // In pruning-only mode the runtime predicate (always the last,
+            // advisory plan) stays out of the row filter. With nothing else to
+            // evaluate, no row filter is installed and the file is decoded
+            // directly.
+            let row_filter_plans = if self.runtime_predicate_row_filter {
+                plans.len()
+            } else {
+                plans.iter().filter(|plan| !plan.advisory).count()
+            };
+            if row_filter_plans == 0 {
                 None
             } else {
-                match row_filter_predicate(&plans) {
+                match row_filter_predicate(&plans[..row_filter_plans]) {
                     Ok(arrow_predicate) => Some(arrow_predicate),
-                    Err(error) if plans.last().is_some_and(|plan| plan.advisory) => {
+                    Err(error)
+                        if plans[..row_filter_plans]
+                            .last()
+                            .is_some_and(|plan| plan.advisory) =>
+                    {
                         tracing::debug!(
                             "Skipping runtime predicate for {}: {error}",
                             task.data_file_path()

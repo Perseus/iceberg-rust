@@ -297,10 +297,18 @@ async fn execute_tasks_with_concurrency(
     bloom_filter: bool,
     concurrency: usize,
 ) -> (Vec<RecordBatch>, ScanMetrics) {
-    let mut builder = ArrowReaderBuilder::new(FileIO::new_with_fs(), Runtime::current())
+    let builder = ArrowReaderBuilder::new(FileIO::new_with_fs(), Runtime::current())
         .with_data_file_concurrency_limit(concurrency)
         .with_row_selection_enabled(true)
         .with_bloom_filter_enabled(bloom_filter);
+    execute_with_builder(builder, tasks, provider).await
+}
+
+async fn execute_with_builder(
+    mut builder: ArrowReaderBuilder,
+    tasks: Vec<FileScanTask>,
+    provider: Option<Arc<dyn RuntimePredicateProvider>>,
+) -> (Vec<RecordBatch>, ScanMetrics) {
     if let Some(provider) = provider {
         builder = builder.with_runtime_predicate_provider(provider);
     }
@@ -1325,4 +1333,137 @@ async fn runtime_predicate_transitions_to_none_and_then_to_a_tighter_predicate()
 
     drop(tasks);
     assert!(stream.try_next().await.unwrap().is_none());
+}
+
+fn reader_with_runtime_row_filter(runtime_predicate_row_filter: bool) -> ArrowReaderBuilder {
+    ArrowReaderBuilder::new(FileIO::new_with_fs(), Runtime::current())
+        .with_data_file_concurrency_limit(1)
+        .with_row_selection_enabled(true)
+        .with_runtime_predicate_row_filter(runtime_predicate_row_filter)
+}
+
+fn ids_101_to_102() -> Arc<FixedRuntimePredicate> {
+    Arc::new(FixedRuntimePredicate::new(
+        Reference::new("id")
+            .greater_than_or_equal_to(Datum::int(101))
+            .and(Reference::new("id").less_than_or_equal_to(Datum::int(102))),
+    ))
+}
+
+#[tokio::test]
+async fn runtime_predicate_pruning_only_prunes_row_groups_but_not_rows() {
+    let temp = TempDir::new().unwrap();
+    let path = write_three_row_group_file(temp.path().to_str().unwrap(), "prune_only.parquet");
+    let task = scan_task(path, iceberg_schema(), None);
+    let (_, baseline) = execute(task.clone(), None).await;
+
+    // Default: the runtime predicate also filters rows.
+    let (filtered, _) = execute_with_builder(
+        ArrowReaderBuilder::new(FileIO::new_with_fs(), Runtime::current())
+            .with_data_file_concurrency_limit(1)
+            .with_row_selection_enabled(true),
+        vec![task.clone()],
+        Some(ids_101_to_102()),
+    )
+    .await;
+    assert_eq!(ids(&filtered), vec![101, 102]);
+
+    // Explicitly enabled is the same as the default.
+    let (enabled, _) = execute_with_builder(
+        reader_with_runtime_row_filter(true),
+        vec![task.clone()],
+        Some(ids_101_to_102()),
+    )
+    .await;
+    assert_eq!(ids(&enabled), vec![101, 102]);
+
+    // Pruning only: the other row groups are skipped, but every row of the
+    // surviving row group is returned.
+    let (pruned, metrics) = execute_with_builder(
+        reader_with_runtime_row_filter(false),
+        vec![task],
+        Some(ids_101_to_102()),
+    )
+    .await;
+    assert_eq!(ids(&pruned), vec![100, 101, 102, 103]);
+    assert!(
+        metrics.bytes_read() < baseline.bytes_read(),
+        "pruning-only={} baseline={}",
+        metrics.bytes_read(),
+        baseline.bytes_read()
+    );
+}
+
+#[tokio::test]
+async fn runtime_predicate_pruning_only_keeps_task_predicate_and_deletes() {
+    const FIELD_ID_POSITIONAL_DELETE_FILE_PATH: i32 = 2_147_483_546;
+    const FIELD_ID_POSITIONAL_DELETE_POS: i32 = 2_147_483_545;
+
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().to_str().unwrap();
+    let data_path = write_three_row_group_file(dir, "data.parquet");
+    let position_path = format!("{dir}/positions.parquet");
+    let equality_path = format!("{dir}/equalities.parquet");
+    // Position 5 is id=101; the equality delete removes id=103.
+    write_delete(
+        &position_path,
+        vec![
+            field(
+                "file_path",
+                DataType::Utf8,
+                FIELD_ID_POSITIONAL_DELETE_FILE_PATH,
+            ),
+            field("pos", DataType::Int64, FIELD_ID_POSITIONAL_DELETE_POS),
+        ],
+        vec![
+            Arc::new(StringArray::from(vec![data_path.as_str()])),
+            Arc::new(Int64Array::from(vec![5])),
+        ],
+    );
+    write_delete(&equality_path, vec![field("id", DataType::Int32, 1)], vec![
+        Arc::new(Int32Array::from(vec![103])),
+    ]);
+    let delete = |path: String, file_type, equality_ids| {
+        FileScanTaskDeleteFile::builder()
+            .with_file_size_in_bytes(std::fs::metadata(&path).unwrap().len())
+            .with_file_path(path)
+            .with_file_type(file_type)
+            .with_file_format(DataFileFormat::Parquet)
+            .with_partition_spec_id(0)
+            .with_equality_ids(equality_ids)
+            .build()
+            .unwrap()
+    };
+    let deletes = vec![
+        delete(position_path, DataContentType::PositionDeletes, None),
+        delete(
+            equality_path,
+            DataContentType::EqualityDeletes,
+            Some(vec![1]),
+        ),
+    ];
+    // The task's own predicate removes id=100 and still filters rows.
+    let planned = Reference::new("id")
+        .not_equal_to(Datum::int(100))
+        .bind(iceberg_schema(), false)
+        .unwrap();
+    let task = scan_task_with_deletes(data_path, iceberg_schema(), Some(planned), deletes);
+
+    let (default, _) = execute_with_builder(
+        reader_with_runtime_row_filter(true),
+        vec![task.clone()],
+        Some(ids_101_to_102()),
+    )
+    .await;
+    assert_eq!(ids(&default), vec![102]);
+
+    // Pruning only: only the row group of 100..=103 is read; the task
+    // predicate and both deletes still apply to its rows.
+    let (pruned, _) = execute_with_builder(
+        reader_with_runtime_row_filter(false),
+        vec![task],
+        Some(ids_101_to_102()),
+    )
+    .await;
+    assert_eq!(ids(&pruned), vec![102]);
 }

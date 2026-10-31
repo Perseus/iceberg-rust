@@ -65,6 +65,7 @@ pub struct ArrowReaderBuilder {
     row_selection_enabled: bool,
     bloom_filter_enabled: bool,
     runtime_predicate_provider: Option<Arc<dyn RuntimePredicateProvider>>,
+    runtime_predicate_row_filter: bool,
     parquet_read_options: ParquetReadOptions,
     runtime: Runtime,
 }
@@ -82,6 +83,7 @@ impl ArrowReaderBuilder {
             row_selection_enabled: false,
             bloom_filter_enabled: false,
             runtime_predicate_provider: None,
+            runtime_predicate_row_filter: true,
             parquet_read_options: ParquetReadOptions::builder().build(),
             runtime,
         }
@@ -142,6 +144,22 @@ impl ArrowReaderBuilder {
         self
     }
 
+    /// Determines whether runtime predicates are also evaluated row by row in
+    /// the Parquet row filter.
+    ///
+    /// Defaults to enabled. When disabled, runtime predicates only prune: data
+    /// files, row groups (statistics and bloom filters) and pages (with
+    /// [`Self::with_row_selection_enabled`]). Rows inside the surviving row
+    /// groups and pages are returned unfiltered by the runtime predicate, so the
+    /// caller must filter them itself, for example with a filter operator above
+    /// the scan. The task's own predicate and its delete files are applied as
+    /// before. If no other filter remains, the file is decoded without a row
+    /// filter.
+    pub fn with_runtime_predicate_row_filter(mut self, runtime_predicate_row_filter: bool) -> Self {
+        self.runtime_predicate_row_filter = runtime_predicate_row_filter;
+        self
+    }
+
     /// Provide a hint as to the number of bytes to prefetch for parsing the Parquet metadata
     ///
     /// This hint can help reduce the number of fetch requests. For more details see the
@@ -183,6 +201,7 @@ impl ArrowReaderBuilder {
             row_selection_enabled: self.row_selection_enabled,
             bloom_filter_enabled: self.bloom_filter_enabled,
             runtime_predicate_provider: self.runtime_predicate_provider,
+            runtime_predicate_row_filter: self.runtime_predicate_row_filter,
             parquet_read_options: self.parquet_read_options,
         }
     }
@@ -202,5 +221,6 @@ pub struct ArrowReader {
     row_selection_enabled: bool,
     bloom_filter_enabled: bool,
     runtime_predicate_provider: Option<Arc<dyn RuntimePredicateProvider>>,
+    runtime_predicate_row_filter: bool,
     parquet_read_options: ParquetReadOptions,
 }
