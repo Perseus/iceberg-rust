@@ -153,6 +153,42 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
   branch will.
 - **Remove when:** the pinned iceberg-rust rev contains #3424's merge commit.
 
+### 4. Pruning-only runtime predicates (fork-original)
+
+- **Fork commits:** `fca3878a` (code and tests) and the commit that adds this
+  entry. Authored by the fork maintainer.
+- **Fork-original:** this is not a backport. No upstream PR or commit exists.
+  It builds on entry 1 (apache/iceberg-rust#3351).
+- **What it adds:** `ArrowReaderBuilder::with_runtime_predicate_row_filter(bool)`.
+  The default, `true`, keeps #3351's behaviour unchanged. With `false`, the
+  runtime predicate still prunes row groups (statistics and bloom filters) and
+  pages, but is not ANDed into the Arrow row filter. The task's own predicate,
+  equality deletes and positional deletes are applied exactly as before. With
+  no task predicate and no deletes, no row filter is installed, so the file is
+  decoded directly with no late materialization.
+- **Why it exists:** on TPC-H SF10 Iceberg, DFD's runtime predicates (compacted
+  per-column ranges from DataFusion dynamic filters) made some queries slower
+  than with them off: q8 454 ms vs 392 ms and q9 702 ms vs 589 ms (median,
+  single node). Profiles showed the time going to the row-filter evaluation,
+  which costs rows times predicate size. A local experiment that kept pruning
+  but dropped the runtime part of the row filter removed every regression
+  measured. DataFusion already filters rows exactly above the scan
+  (`FilterExec`), and DataFusion's own Parquet scan applies dynamic filters per
+  row only when `datafusion.execution.parquet.pushdown_filters` is on.
+- **Related upstream:** [apache/iceberg-rust#3351](https://github.com/apache/iceberg-rust/pull/3351);
+  epic [apache/iceberg-rust#3343](https://github.com/apache/iceberg-rust/issues/3343),
+  item "Preserve late materialization with runtime predicates".
+- **Long-term:** to be proposed upstream as part of that epic item; DFD then
+  moves to whatever control upstream ships.
+- **Used by:** `datafusion-distributed-iceberg`'s file open, which uses
+  pruning-only mode unless `datafusion.execution.parquet.pushdown_filters` is
+  true; branch
+  [`iceberg-dyn-filter/g2-pruning-only-runtime-predicate`](https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter/g2-pruning-only-runtime-predicate)
+  (its draft PR is linked from that branch's PR list).
+- **Remove when:** upstream ships an equivalent control for runtime predicates
+  (epic #3343, item "Preserve late materialization with runtime predicates"),
+  or with entry 1.
+
 ## Commit trailer notes
 
 - `acf73714`, `cfd8069b` and `dacdc376` carry
@@ -163,6 +199,9 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
   "History"), so the trailers still read as committed.
 - The follow-up commit that corrects the `with_column_stats` doc and this
   ledger links #7 directly.
+- Entry 4's commits carry
+  `Needed-by: https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter/g2-pruning-only-runtime-predicate`
+  (a branch link), for the same reason.
 
 ## History
 
