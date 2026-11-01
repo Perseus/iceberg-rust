@@ -149,8 +149,12 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
   statistics on `FileScanTask`.
 - **Used by:** the root `Cargo.toml` `[patch]` in
   [Perseus/datafusion-distributed#7](https://github.com/Perseus/datafusion-distributed/pull/7).
-  No DFD code calls `with_column_stats` yet; later changes on top of that
-  branch will.
+  That PR belongs to an earlier series, since replaced. In the current series
+  the `[patch]` is added once, by branch
+  [`iceberg-dyn-filter-v2/f2-runtime-predicate-pruning`](https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter-v2/f2-runtime-predicate-pruning),
+  and `with_column_stats` is called by the follow-up that skips data files by
+  column bounds. This pin carries the backport already so that follow-up needs
+  no repin.
 - **Remove when:** the pinned iceberg-rust rev contains #3424's merge commit.
 
 ### 4. Pruning-only runtime predicates (fork-original)
@@ -172,19 +176,25 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
   single node). Profiles showed the time going to the row-filter evaluation,
   which costs rows times predicate size. A local experiment that kept pruning
   but dropped the runtime part of the row filter removed every regression
-  measured. DataFusion already filters rows exactly above the scan
-  (`FilterExec`), and DataFusion's own Parquet scan applies dynamic filters per
-  row only when `datafusion.execution.parquet.pushdown_filters` is on.
+  measured. Per-row evaluation is not needed for a correct result: DataFusion
+  puts no `FilterExec` above the scan for a dynamic filter; the operator that
+  produced it makes the result exact (the hash join probes its hash table, TopK
+  and aggregates re-check their threshold). DataFusion's own Parquet scan
+  applies dynamic filters per row only when
+  `datafusion.execution.parquet.pushdown_filters` is on.
 - **Related upstream:** [apache/iceberg-rust#3351](https://github.com/apache/iceberg-rust/pull/3351);
   epic [apache/iceberg-rust#3343](https://github.com/apache/iceberg-rust/issues/3343),
   item "Preserve late materialization with runtime predicates".
 - **Long-term:** to be proposed upstream as part of that epic item; DFD then
-  moves to whatever control upstream ships.
+  moves to whatever control upstream ships. When proposing it, an enum such as
+  `RuntimePredicateUse::{PruneOnly, PruneAndFilter}` may be preferable to a
+  bool: it names both modes and leaves room for more.
 - **Used by:** `datafusion-distributed-iceberg`'s file open, which uses
   pruning-only mode unless `datafusion.execution.parquet.pushdown_filters` is
   true; branch
-  [`iceberg-dyn-filter/g2-pruning-only-runtime-predicate`](https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter/g2-pruning-only-runtime-predicate)
-  (its draft PR is linked from that branch's PR list).
+  [`iceberg-dyn-filter-v2/f2-runtime-predicate-pruning`](https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter-v2/f2-runtime-predicate-pruning)
+  (its draft PR is linked from that branch's PR list). The earlier branch
+  `iceberg-dyn-filter/g2-pruning-only-runtime-predicate` is superseded.
 - **Remove when:** upstream ships an equivalent control for runtime predicates
   (epic #3343, item "Preserve late materialization with runtime predicates"),
   or with entry 1.
@@ -199,9 +209,13 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
   "History"), so the trailers still read as committed.
 - The follow-up commit that corrects the `with_column_stats` doc and this
   ledger links #7 directly.
-- Entry 4's commits carry
+- Entry 4's first two commits carry
   `Needed-by: https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter/g2-pruning-only-runtime-predicate`
-  (a branch link), for the same reason.
+  (a branch link), for the same reason. That branch is superseded by
+  [`iceberg-dyn-filter-v2/f2-runtime-predicate-pruning`](https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter-v2/f2-runtime-predicate-pruning),
+  which is what DFD's `[patch]` now comes from.
+- The ledger-correction commit after entry 4 carries `Needed-by:` that v2
+  branch.
 
 ## History
 

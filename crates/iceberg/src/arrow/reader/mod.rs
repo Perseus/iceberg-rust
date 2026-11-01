@@ -151,8 +151,10 @@ impl ArrowReaderBuilder {
     /// files, row groups (statistics and bloom filters) and pages (with
     /// [`Self::with_row_selection_enabled`]). Rows inside the surviving row
     /// groups and pages are returned unfiltered by the runtime predicate, so the
-    /// caller must filter them itself, for example with a filter operator above
-    /// the scan. The task's own predicate and its delete files are applied as
+    /// caller must make the result exact itself. For DataFusion dynamic filters
+    /// there is no filter operator above the scan: the operator that produced
+    /// the filter does it (a hash join probes its hash table, TopK and
+    /// aggregates re-check their threshold). The task's own predicate and its delete files are applied as
     /// before. If no other filter remains, the file is decoded without a row
     /// filter.
     pub fn with_runtime_predicate_row_filter(mut self, runtime_predicate_row_filter: bool) -> Self {
