@@ -70,10 +70,9 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
   live dynamic filters when a data-file task opens.
 - **Used by:** `datafusion-distributed-iceberg` file-open pruning, behind
   `iceberg.dynamic_filter_pruning_enabled`;
-  [Perseus/datafusion-distributed#5](https://github.com/Perseus/datafusion-distributed/pull/5)
-  (adds the `[patch]`) and
-  [Perseus/datafusion-distributed#6](https://github.com/Perseus/datafusion-distributed/pull/6)
-  (uses the API).
+  [Perseus/datafusion-distributed#18](https://github.com/Perseus/datafusion-distributed/pull/18) (branch `iceberg-dyn-filter-v2/f2-runtime-predicate-pruning`), which
+  adds the `[patch]` and uses the API. It replaces Perseus/datafusion-distributed#5
+  and #6 from an earlier series.
 - **Remove when:** the pinned iceberg-rust rev contains #3351's merge commit.
 
 ### 2. Test-only `.unwrap()` for `FileScanTaskDeleteFile::builder().build()`
@@ -150,8 +149,7 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
 - **Used by:** the root `Cargo.toml` `[patch]` in
   [Perseus/datafusion-distributed#7](https://github.com/Perseus/datafusion-distributed/pull/7).
   That PR belongs to an earlier series, since replaced. In the current series
-  the `[patch]` is added once, by branch
-  [`iceberg-dyn-filter-v2/f2-runtime-predicate-pruning`](https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter-v2/f2-runtime-predicate-pruning),
+  the `[patch]` is added once, by [Perseus/datafusion-distributed#18](https://github.com/Perseus/datafusion-distributed/pull/18),
   and `with_column_stats` is called by the follow-up that skips data files by
   column bounds. This pin carries the backport already so that follow-up needs
   no repin.
@@ -193,7 +191,7 @@ When `datafusion-iceberg` moves its iceberg-rust pin to rev `X`:
   pruning-only mode unless `datafusion.execution.parquet.pushdown_filters` is
   true; branch
   [`iceberg-dyn-filter-v2/f2-runtime-predicate-pruning`](https://github.com/Perseus/datafusion-distributed/tree/iceberg-dyn-filter-v2/f2-runtime-predicate-pruning)
-  (its draft PR is linked from that branch's PR list). The earlier branch
+  ([Perseus/datafusion-distributed#18](https://github.com/Perseus/datafusion-distributed/pull/18)). The earlier branch
   `iceberg-dyn-filter/g2-pruning-only-runtime-predicate` is superseded.
 - **Remove when:** upstream ships an equivalent control for runtime predicates
   (epic #3343, item "Preserve late materialization with runtime predicates"),
